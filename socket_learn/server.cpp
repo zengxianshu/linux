@@ -6,6 +6,10 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+#define BUFFER_SIZE 1024
+#define HTONS_VALUE 6036
+
+
 int main(){
     
     /*
@@ -26,24 +30,63 @@ int main(){
     memset(&serv_addr, 0, sizeof(serv_addr));  //每个字节都用0填充
     serv_addr.sin_family = AF_INET;  //使用IPv4地址
     serv_addr.sin_addr.s_addr = inet_addr("127.0.0.1");  //具体的IP地址
-    serv_addr.sin_port = htons(1234);  //端口
-    bind(serv_sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr));
+    serv_addr.sin_port = htons(HTONS_VALUE);  //端口
 
-    //进入监听状态，等待用户发起请求
-    listen(serv_sock, 20);
+    // 设置套接字选项避免地址使用错误  
+    int resuse = 1;  
+    if(setsockopt(serv_sock,SOL_SOCKET,SO_REUSEADDR,&resuse,sizeof(resuse))<0) {
+        perror("setsockopt");
+        exit(1);
+    }
 
-    //接收客户端请求
-    struct sockaddr_in clnt_addr;
-    socklen_t clnt_addr_size = sizeof(clnt_addr);
-    int clnt_sock = accept(serv_sock, (struct sockaddr*)&clnt_addr, &clnt_addr_size);
+    ///bind，成功返回0，出错返回-1
+    if (bind(serv_sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) == -1) {
+        perror("bind");
+        exit(1);
+    }
+    printf("服务器挂起\n");
 
-    //向客户端发送数据
-    char str[] = "Hello World!";
-    write(clnt_sock, str, sizeof(str));
-   
-    //关闭套接字
-    close(clnt_sock);
+    /*
+    sock 为需要进入监听状态的套接字
+    backlog 为请求队列的最大长度  如果设定 SOMAXCONN 则是由系统来决定队列长度 
+    */
+    //进入监听状态，等待用户发起请求 listen，成功返回0，出错返回-1
+     if(listen(serv_sock,20) == -1)
+     {
+         perror("listen");
+         exit(1);
+     }
+
+
+    while(1)
+    {
+
+        //接收客户端请求
+        struct sockaddr_in clnt_addr;
+        socklen_t clnt_addr_size = sizeof(clnt_addr);
+        char buffer[BUFFER_SIZE];
+
+        int clnt_sock = accept(serv_sock, (struct sockaddr*)&clnt_addr, &clnt_addr_size);
+        if(clnt_sock<0){
+            perror("connect");
+            exit(1);
+        }
+
+        memset(buffer,0,sizeof(buffer));
+        int len = recv(clnt_sock, buffer, sizeof(buffer),0);
+        printf("服务器接收数据%s\n",buffer);
+        if(strcmp(buffer,"exit\n")==0)
+         break;
+        fputs(buffer, stdout);
+        send(clnt_sock, buffer, len, 0);
+        printf("服务器发送数据%s\n",buffer);
+        //关闭套接字
+        close(clnt_sock);
+    }
+
+
     close(serv_sock);
+    printf("关闭服务器\n");
 
     return 0;
 }
